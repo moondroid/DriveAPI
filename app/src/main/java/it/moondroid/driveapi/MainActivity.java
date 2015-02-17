@@ -1,10 +1,7 @@
 package it.moondroid.driveapi;
 
-import android.support.v7.app.ActionBarActivity;
 import android.os.Bundle;
 import android.util.Log;
-import android.view.Menu;
-import android.view.MenuItem;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
@@ -12,15 +9,14 @@ import android.widget.Toast;
 
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.api.ResultCallback;
+import com.google.android.gms.common.api.Status;
 import com.google.android.gms.drive.Drive;
 import com.google.android.gms.drive.DriveApi;
 import com.google.android.gms.drive.DriveContents;
 import com.google.android.gms.drive.DriveFile;
 import com.google.android.gms.drive.DriveFolder;
 import com.google.android.gms.drive.DriveId;
-import com.google.android.gms.drive.DriveResource;
 import com.google.android.gms.drive.Metadata;
-import com.google.android.gms.drive.MetadataBuffer;
 import com.google.android.gms.drive.MetadataChangeSet;
 import com.google.android.gms.drive.query.Filters;
 import com.google.android.gms.drive.query.Query;
@@ -51,8 +47,16 @@ public class MainActivity extends BaseDriveActivity {
         mSendButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                Drive.DriveApi.newDriveContents(getGoogleApiClient())
-                        .setResultCallback(driveContentsCallback);
+
+                String driveFileId = Preferences.getDriveId(MainActivity.this);
+                Log.d("MainActivity", "driveFileId: "+driveFileId);
+                if(driveFileId.isEmpty()){
+                    Drive.DriveApi.newDriveContents(getGoogleApiClient())
+                            .setResultCallback(driveContentsCallback);
+                }else{
+                    Drive.DriveApi.fetchDriveId(getGoogleApiClient(), driveFileId)
+                            .setResultCallback(driveFileIdCallback);
+                }
 
             }
         });
@@ -84,6 +88,24 @@ public class MainActivity extends BaseDriveActivity {
         super.onConnectionFailed(result);
         mSendButton.setEnabled(false);
     }
+
+    final private ResultCallback<DriveApi.DriveIdResult> driveFileIdCallback =
+            new ResultCallback<DriveApi.DriveIdResult>() {
+        @Override
+        public void onResult(DriveApi.DriveIdResult result) {
+            if (!result.getStatus().isSuccess()) {
+                showMessage("Cannot find DriveId. Are you authorized to view this file?");
+                return;
+            }
+            DriveFile file = Drive.DriveApi.getFile(getGoogleApiClient(), result.getDriveId());
+            editFileContent(file, new FileWriteCallback() {
+                @Override
+                public void onFileWrite(boolean success) {
+                    showMessage("Write Success!");
+                }
+            });
+        }
+    };
 
     final private ResultCallback<DriveApi.DriveContentsResult> driveContentsCallback =
             new ResultCallback<DriveApi.DriveContentsResult>() {
@@ -117,7 +139,7 @@ public class MainActivity extends BaseDriveActivity {
 
                             Drive.DriveApi.getAppFolder(getGoogleApiClient())
                                     .createFile(getGoogleApiClient(), changeSet, driveContents)
-                                    .setResultCallback(fileCallback);
+                                    .setResultCallback(fileWriteCallback);
                         }
                     }.start();
 
@@ -139,17 +161,21 @@ public class MainActivity extends BaseDriveActivity {
                         if (metadata.isInAppFolder()){
                             readFileContent(metadata, new FileReadCallback() {
                                 @Override
-                                public void onFileRead(String result) {
+                                public void onFileRead(DriveId driveId, String result) {
                                     Toast.makeText(MainActivity.this, result, Toast.LENGTH_SHORT)
                                             .show();
+                                    mEditText.setText(result);
+                                    Preferences.setDriveId(MainActivity.this, driveId.encodeToString());
                                 }
                             });
+                            //result.getMetadataBuffer().release();
+                            return;
                         }
                     }
                 }
             };
 
-    final private ResultCallback<DriveFolder.DriveFileResult> fileCallback = new
+    final private ResultCallback<DriveFolder.DriveFileResult> fileWriteCallback = new
             ResultCallback<DriveFolder.DriveFileResult>() {
                 @Override
                 public void onResult(DriveFolder.DriveFileResult result) {
@@ -157,13 +183,14 @@ public class MainActivity extends BaseDriveActivity {
                         showMessage("Error while trying to create the file");
                         return;
                     }
-                    showMessage("Created a file in App Folder: "
-                            + result.getDriveFile().getDriveId());
+                    DriveId driveId = result.getDriveFile().getDriveId();
+                    Preferences.setDriveId(MainActivity.this, driveId.encodeToString());
+                    showMessage("Created a file in App Folder: " + driveId);
                 }
             };
 
     private interface FileReadCallback {
-        void onFileRead(String result);
+        void onFileRead(DriveId driveId, String result);
     }
     private void readFileContent(final Metadata metadata, final FileReadCallback fileReadCallback){
         new Thread() {
@@ -197,10 +224,45 @@ public class MainActivity extends BaseDriveActivity {
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
-                        fileReadCallback.onFileRead(result);
+                        fileReadCallback.onFileRead(metadata.getDriveId(), result);
                     }
                 });
 
+            }
+        }.start();
+    }
+
+    private interface FileWriteCallback {
+        void onFileWrite(boolean success);
+    }
+    private void editFileContent(final DriveFile file, final FileWriteCallback fileWriteCallback){
+        new Thread(){
+            @Override
+            public void run() {
+                try {
+                    DriveApi.DriveContentsResult driveContentsResult = file.open(
+                            getGoogleApiClient(), DriveFile.MODE_WRITE_ONLY, null).await();
+                    if (!driveContentsResult.getStatus().isSuccess()) {
+                        showMessage("Error while trying to write file contents");
+                        return;
+                    }
+                    DriveContents driveContents = driveContentsResult.getDriveContents();
+                    OutputStream outputStream = driveContents.getOutputStream();
+                    outputStream.write(mEditText.getText().toString().getBytes());
+
+                    Status status = driveContents.commit(getGoogleApiClient(), null).await();
+                    final boolean success = status.getStatus().isSuccess();
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            fileWriteCallback.onFileWrite(success);
+                        }
+                    });
+
+
+                } catch (IOException e) {
+                    showMessage("IOException while appending to the output stream");
+                }
             }
         }.start();
     }
