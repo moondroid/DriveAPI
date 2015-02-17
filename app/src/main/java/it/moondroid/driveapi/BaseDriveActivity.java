@@ -13,9 +13,12 @@ import com.google.android.gms.common.api.GoogleApiClient;
 import com.google.android.gms.drive.Drive;
 
 /**
+ * An abstract activity that handles authorization and connection to the Drive
+ * services.
+ *
  * Created by Marco on 16/02/2015.
  */
-public class BaseDriveActivity extends ActionBarActivity
+public abstract class BaseDriveActivity extends ActionBarActivity
         implements GoogleApiClient.ConnectionCallbacks,
         GoogleApiClient.OnConnectionFailedListener {
 
