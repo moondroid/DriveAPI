@@ -54,8 +54,13 @@ public class MainActivity extends BaseDriveActivity {
                     Drive.DriveApi.newDriveContents(getGoogleApiClient())
                             .setResultCallback(driveContentsCallback);
                 }else{
-                    Drive.DriveApi.fetchDriveId(getGoogleApiClient(), driveFileId)
-                            .setResultCallback(driveFileIdCallback);
+                    DriveFile file = Drive.DriveApi.getFile(getGoogleApiClient(), DriveId.decodeFromString(driveFileId));
+                    editFileContent(file, new FileWriteCallback() {
+                        @Override
+                        public void onFileWrite(boolean success) {
+                            showMessage("Write Success!");
+                        }
+                    });
                 }
 
             }
@@ -89,23 +94,6 @@ public class MainActivity extends BaseDriveActivity {
         mSendButton.setEnabled(false);
     }
 
-    final private ResultCallback<DriveApi.DriveIdResult> driveFileIdCallback =
-            new ResultCallback<DriveApi.DriveIdResult>() {
-        @Override
-        public void onResult(DriveApi.DriveIdResult result) {
-            if (!result.getStatus().isSuccess()) {
-                showMessage("Cannot find DriveId. Are you authorized to view this file?");
-                return;
-            }
-            DriveFile file = Drive.DriveApi.getFile(getGoogleApiClient(), result.getDriveId());
-            editFileContent(file, new FileWriteCallback() {
-                @Override
-                public void onFileWrite(boolean success) {
-                    showMessage("Write Success!");
-                }
-            });
-        }
-    };
 
     final private ResultCallback<DriveApi.DriveContentsResult> driveContentsCallback =
             new ResultCallback<DriveApi.DriveContentsResult>() {
