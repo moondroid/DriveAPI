@@ -3,13 +3,13 @@ package it.moondroid.driveapi;
 import android.content.Intent;
 import android.content.IntentSender;
 import android.os.Bundle;
-import android.support.v4.app.Fragment;
 import android.util.Log;
-import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
-import android.view.ViewGroup;
+import android.widget.ProgressBar;
+import android.widget.ScrollView;
+import android.widget.TextView;
 
 import com.google.android.gms.common.api.ResultCallback;
 import com.google.android.gms.drive.Drive;
@@ -25,8 +25,8 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 
 
-public class NoteListActivity extends BaseDriveActivity {
-    private static final String TAG = "NoteListActivity";
+public class ReadFileActivity extends BaseDriveActivity {
+    private static final String TAG = "ReadFileActivity";
 
     /**
      * Request code for the opener activity.
@@ -51,23 +51,25 @@ public class NoteListActivity extends BaseDriveActivity {
      */
     private DriveContents mDriveContents;
 
+    private ScrollView mScrollView;
+    private TextView mTextView;
+    private ProgressBar mProgressBar;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_note_list);
-        if (savedInstanceState == null) {
-            getSupportFragmentManager().beginTransaction()
-                    .add(R.id.container, new PlaceholderFragment())
-                    .commit();
-        }
+        setContentView(R.layout.activity_read_file);
+
+        mScrollView = (ScrollView)findViewById(R.id.scrollView);
+        mTextView = (TextView)findViewById(R.id.textView);
+        mProgressBar = (ProgressBar)findViewById(R.id.progress);
     }
 
 
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
         // Inflate the menu; this adds items to the action bar if it is present.
-        getMenuInflater().inflate(R.menu.menu_note_list, menu);
+        getMenuInflater().inflate(R.menu.menu_read_file, menu);
         return true;
     }
 
@@ -106,9 +108,6 @@ public class NoteListActivity extends BaseDriveActivity {
                     mCurrentDriveId = (DriveId) data.getParcelableExtra(
                             OpenFileActivityBuilder.EXTRA_RESPONSE_DRIVE_ID);
                     Log.d(TAG, "driveId "+mCurrentDriveId);
-                    showMessage("Selected file's ID: " + mCurrentDriveId);
-
-                    //get();
                 }
                 break;
             default:
@@ -120,11 +119,13 @@ public class NoteListActivity extends BaseDriveActivity {
     public void onConnected(Bundle connectionHint) {
         super.onConnected(connectionHint);
         if(mCurrentDriveId != null){
+            showProgress(true);
             Drive.DriveApi.getFile(getGoogleApiClient(), mCurrentDriveId)
                     .open(getGoogleApiClient(), DriveFile.MODE_READ_ONLY, new DriveFile.DownloadProgressListener() {
                         @Override
                         public void onProgress(long bytesDownloaded, long bytesExpected) {
                             // display the progress
+
                         }
                     })
                     .setResultCallback(idCallback);
@@ -136,6 +137,7 @@ public class NoteListActivity extends BaseDriveActivity {
             new ResultCallback<DriveApi.DriveContentsResult>() {
         @Override
         public void onResult(DriveApi.DriveContentsResult result) {
+            showProgress(false);
             if (!result.getStatus().isSuccess()) {
                 // Handle error
                 return;
@@ -151,24 +153,20 @@ public class NoteListActivity extends BaseDriveActivity {
             } catch (IOException e) {
                 showMessage("IOException while reading from the stream");
             }
-            String contentsAsString = builder.toString();
-            showMessage(contentsAsString);
+
+            mTextView.setText(builder.toString());
         }
     };
 
-    /**
-     * A placeholder fragment containing a simple view.
-     */
-    public static class PlaceholderFragment extends Fragment {
 
-        public PlaceholderFragment() {
-        }
-
-        @Override
-        public View onCreateView(LayoutInflater inflater, ViewGroup container,
-                                 Bundle savedInstanceState) {
-            View rootView = inflater.inflate(R.layout.fragment_note_list, container, false);
-            return rootView;
+    private void showProgress(boolean show){
+        if (show){
+            mScrollView.setVisibility(View.GONE);
+            mProgressBar.setVisibility(View.VISIBLE);
+        }else{
+            mProgressBar.setVisibility(View.GONE);
+            mScrollView.setVisibility(View.VISIBLE);
         }
     }
+
 }
